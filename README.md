@@ -19,7 +19,7 @@ A Chrome extension that monitors and notifies you about new flight deals from le
 ### For Development
 1. Clone this repository
 ```bash
-git clone [your-repo-url]
+git clone https://github.com/reidliujun/lentodiilit_extension
 cd lentodiilit_extension
 ```
 
