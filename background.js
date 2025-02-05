@@ -31,6 +31,21 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 async function checkForNewDeals() {
   try {
+    // Get already notified deals for today
+    const today = new Date();
+    const todayString = today.toDateString(); // Fixed: added () to call the function
+    //const yesterday = new Date(today); // for testing
+    //yesterday.setDate(today.getDate() - 1); // for testing
+    const storage = await chrome.storage.local.get('notifiedDeals');
+    const notifiedDeals = storage.notifiedDeals || {};
+    
+    // Clear old notifications (keep only today's)
+    for (let date in notifiedDeals) {
+      if (date !== todayString) {
+        delete notifiedDeals[date];
+      }
+    }
+
     const response = await fetch('https://lentodiilit.fi/');
     const text = await response.text();
     
@@ -40,30 +55,60 @@ async function checkForNewDeals() {
     
     if (!dealsMatch) return;
     
-    // Get first link using regex
-    const linkRegex = /<a href="([^"]+)"[^>]*>([^<]+)<\/a>/;
-    const linkMatch = dealsMatch[1].match(linkRegex);
+    // 修改为全局匹配所有链接
+    const linkRegex = /<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+    const dealsContent = dealsMatch[1];
+    let linkMatch;
+    let todayDeals = [];
+    let todayUrls = []; // Add array to store URLs
     
-    if (!linkMatch) return;
-    
-    const href = linkMatch[1];
-    const dealText = linkMatch[2];
-    const dateMatch = href.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
-    
-    if (!dateMatch) return;
+    while ((linkMatch = linkRegex.exec(dealsContent)) !== null) {
+      const href = linkMatch[1];
+      const dealText = linkMatch[2];
+      
+      // Fixed: use todayString instead of today object
+      if (notifiedDeals[todayString]?.includes(href)) {
+        console.log('Skip already notified deal:', href);
+        continue;
+      }
 
-    const dealDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-    const today = new Date().toISOString().split('T')[0];
+      const dateMatch = href.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
+      if (!dateMatch) continue;
 
-    // Check if deal is from today
-    if (dealDate === today) {
-      // Show notification
+      const dealDate = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`);
+      if (dealDate.toDateString() === todayString) {
+        try {
+          const translateResponse = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=fi&tl=en&dt=t&q=${encodeURIComponent(dealText)}`);
+          const translation = await translateResponse.json();
+          const translatedText = translation[0][0][0];
+          todayDeals.push(`${translatedText}`);
+          todayUrls.push(href); // Store the URL
+        } catch (translateError) {
+          todayDeals.push(dealText);
+          todayUrls.push(href); // Store the URL even if translation fails
+          console.error('Translation error:', translateError);
+        }
+      }
+    }
+
+    if (todayDeals.length > 0) {
+      const message = todayDeals.join('\n\n');
       chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon128.png',
-        title: 'New Flight Deal!',
-        message: dealText
+        title: `Today's Flight Deals (${todayDeals.length})`,
+        message: message
       });
+
+      // Store the notified deals using the collected URLs
+      // Fixed: initialize array if undefined
+      notifiedDeals[todayString] = notifiedDeals[todayString] || [];
+      notifiedDeals[todayString].push(...todayUrls);
+      
+      // Debug log
+      console.log('Storing notified deals:', notifiedDeals);
+      
+      await chrome.storage.local.set({ notifiedDeals });
     }
 
   } catch (error) {
