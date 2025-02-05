@@ -11,6 +11,24 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// Initialize alarm when extension is installed or updated
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('keepAlive', { periodInMinutes: 1 });
+  chrome.alarms.create('checkDeals', { periodInMinutes: 60 });
+  checkForNewDeals(); // Initial check
+});
+
+// Listen for alarm events
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'checkDeals') {
+    checkForNewDeals();
+  }
+  if (alarm.name === 'keepAlive') {
+    // Keep the service worker alive
+    console.log('Keeping service worker alive');
+  }
+});
+
 async function checkForNewDeals() {
   try {
     const response = await fetch('https://lentodiilit.fi/');
